@@ -11,7 +11,7 @@ before advancing (§12).
 | M2 — Ingestion + state machine | ✅ Done | 2026-07-22 |
 | M3 — Work orders + execution | ✅ Done | 2026-07-22 |
 | M4 — DNC orchestration | ✅ Done | 2026-07-22 |
-| M5 — Downtime analytics | ⬜ Not started | — |
+| M5 — Downtime analytics | ✅ Done | 2026-07-22 |
 | M6 — OEE | ⬜ Not started | — |
 | M7 — Traceability | ⬜ Not started | — |
 | M8 — QMS | ⬜ Not started | — |
@@ -330,3 +330,47 @@ created and explicitly **not** auto-promoted.
   currently generates a local ref as a placeholder (flagged in-code).
 - `machine-sim`'s virtual dnc-daemon mode (§13) reuses the same
   `DncEvent`/`daemon-events` seam this milestone establishes.
+
+---
+
+## M5 — Downtime analytics ✅
+
+**Goal (§12):** reason trees, Six-Big-Losses mapping, Pareto + trend queries.
+
+**Acceptance:** a seeded week of data → Pareto ordering matches a hand-computed
+fixture.
+
+### What landed
+
+- **Analytics math (`mes-core::analytics`, pure)** — the `SixBigLoss` enum
+  (with its OEE bucket: availability/performance/quality, §8.2) and `pareto()`:
+  ranks categories by descending magnitude (ties broken by key for
+  determinism), drops zero/empty, and computes each row's share + running
+  cumulative share. 4 unit tests including the hand-computed 50/30/20 fixture.
+- **Schema** — migration `0006` (additive): `downtime_reasons` gains
+  `parent_id` (reason **tree**) + `six_big_loss`; `scrap_reasons` gains
+  `six_big_loss` (quality bucket).
+- **Aggregation (`mes-db::repo_analytics`)** — SQL sums classified-downtime
+  seconds per reason and per loss bucket, and daily totals for the trend; the
+  ranking/cumulative maths stay in `mes-core` so they're fixture-testable.
+- **`/v1/analytics`** — `downtime/pareto`, `downtime/six-big-losses`, and
+  `downtime/trend`, each taking a `?start=&end=` window; read-only, any
+  authenticated user.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green.
+- **Integration suite** (`tests/m5_analytics.rs`, fresh schema per test): a
+  seeded week (Breakdown 5400s, Setup 2400s, Minor 900s classified + 600s
+  unclassified) yields the Pareto order **Breakdown > Setup > Minor** with the
+  fixture's exact seconds, `pct` = 5400/8700, cumulative reaching 100%; the
+  Six-Big-Losses rollup ranks `breakdown` first; and the trend (which includes
+  unclassified downtime) totals 9300s. Runs in CI against the TimescaleDB
+  service.
+
+### Notes / deferrals
+
+- Pareto operates on the leaf reason assigned to each event; the `parent_id`
+  tree is in place for roll-up-to-parent grouping when the supervisor UI needs
+  it (M11). Unclassified downtime is excluded from the Pareto but included in
+  the raw trend. The OEE **engine** (A×P×Q, continuous aggregates) is M6.
