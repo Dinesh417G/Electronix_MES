@@ -7,8 +7,11 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod exec;
 pub mod ingest;
 pub mod master;
+pub mod orders;
+pub mod ws;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

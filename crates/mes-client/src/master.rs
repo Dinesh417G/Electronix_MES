@@ -114,3 +114,25 @@ pub struct User {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+// ---- Program (routing_op ↔ DNC program library, §7) ----------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProgramInput {
+    pub routing_op_id: Option<String>,
+    pub part_id: Option<String>,
+    /// The identifier `dnc-daemon` knows the program by (§8.4).
+    pub program_identifier: String,
+    pub target_machine: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Program {
+    pub id: String,
+    pub routing_op_id: Option<String>,
+    pub part_id: Option<String>,
+    pub program_identifier: String,
+    pub target_machine: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

@@ -9,8 +9,10 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
+use mes_client::ws::WsEvent;
 use mes_client::HealthResponse;
 use sqlx::PgPool;
+use tokio::sync::broadcast;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 
@@ -26,6 +28,21 @@ pub struct AppState {
     pub pool: Option<PgPool>,
     /// JWT signing/verification config for authenticated routes (§12 M1).
     pub auth: AuthConfig,
+    /// Broadcast bus for live `/ws` events (§10, §12 M3).
+    pub events: broadcast::Sender<WsEvent>,
+}
+
+impl AppState {
+    /// Build state with a fresh event bus.
+    pub fn new(pool: Option<PgPool>, auth: AuthConfig) -> Self {
+        let (events, _) = broadcast::channel(1024);
+        Self { pool, auth, events }
+    }
+
+    /// Publish a live event; a send with no subscribers is not an error.
+    pub fn publish(&self, event: WsEvent) {
+        let _ = self.events.send(event);
+    }
 }
 
 /// OpenAPI document root. Grows as `/v1/*` handlers are annotated (§10).
@@ -43,9 +60,12 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api-doc/openapi.json", get(openapi_json))
+        .route("/ws", get(crate::ws::ws_handler))
         .nest("/v1/auth", crate::auth_routes::routes())
         .nest("/v1/master", crate::master::routes())
         .nest("/v1/ingest", crate::ingest::routes())
+        .nest("/v1/orders", crate::orders::routes())
+        .nest("/v1/exec", crate::exec::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -115,10 +135,7 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_is_false_without_pool() {
-        let state = AppState {
-            pool: None,
-            auth: AuthConfig::new("test".to_string(), 3600),
-        };
+        let state = AppState::new(None, AuthConfig::new("test".to_string(), 3600));
         assert!(!is_ready(&state).await);
     }
 }

@@ -15,7 +15,7 @@ mes-client = { workspace = true }
 
 sqlx = { workspace = true }
 tokio = { workspace = true }
-axum = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -33,3 +33,5 @@ jsonwebtoken = "9"
 mes-ingest = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
