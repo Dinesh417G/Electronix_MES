@@ -1,0 +1,57 @@
+# Dev-gate CI — mirrors ElectronIx DNC's ci.yml shape (§3, §12 M0):
+# fmt + clippy (-D warnings) + test on every push and PR.
+#
+# A TimescaleDB service is wired up front so DB integration tests added from M1
+# onward run without further workflow changes (§13). M0's tests do not require
+# it, so the gate is green on a fresh checkout regardless.
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DATABASE_URL: postgres://mes:mes@localhost:5432/mes
+
+jobs:
+  dev-gate:
+    runs-on: ubuntu-latest
+
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: mes
+          POSTGRES_PASSWORD: mes
+          POSTGRES_DB: mes
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mes -d mes"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all --all-features

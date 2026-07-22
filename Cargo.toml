@@ -1,0 +1,77 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mes-core",
+    "crates/mes-db",
+    "crates/mes-ingest",
+    "crates/mes-dnc-bridge",
+    "crates/mes-erp",
+    "crates/mes-agent-tools",
+    "crates/mes-diagnostics",
+    "crates/mes-sync",
+    "crates/mes-edge",
+    "crates/mes-cloud",
+    "crates/mes-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Proprietary"
+authors = ["ElectronIx"]
+repository = "https://github.com/dinesh417g/electronix_mes"
+
+# Centralised, pinned dependency versions (§5). Individual crates opt in by
+# referencing `workspace = true` so versions never drift between crates.
+[workspace.dependencies]
+# Async runtime + web
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+
+# Serialisation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "macros",
+    "migrate",
+    "chrono",
+    "uuid",
+] }
+
+# IDs, time, decimals
+ulid = "1"
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras", "chrono"] }
+
+# Internal crates
+mes-core = { path = "crates/mes-core" }
+mes-db = { path = "crates/mes-db" }
+mes-ingest = { path = "crates/mes-ingest" }
+mes-dnc-bridge = { path = "crates/mes-dnc-bridge" }
+mes-erp = { path = "crates/mes-erp" }
+mes-agent-tools = { path = "crates/mes-agent-tools" }
+mes-diagnostics = { path = "crates/mes-diagnostics" }
+mes-sync = { path = "crates/mes-sync" }
+mes-client = { path = "crates/mes-client" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

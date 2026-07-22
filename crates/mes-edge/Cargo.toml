@@ -1,0 +1,24 @@
+[package]
+name = "mes-edge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mes-edge"
+path = "src/main.rs"
+
+[dependencies]
+mes-core = { workspace = true }
+mes-db = { workspace = true }
+mes-client = { workspace = true }
+
+sqlx = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+utoipa = { workspace = true }

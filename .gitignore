@@ -1,0 +1,23 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Environment / secrets (§14 — secrets via env only, never committed)
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Node / Tauri (apps, built from M11)
+node_modules/
+dist/
+apps/**/src-tauri/target/
+
+# Diagnostics buffers (§8.5)
+*.diag
