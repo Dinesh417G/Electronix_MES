@@ -31,6 +31,12 @@ pub fn can_promote_revision(role_code: &str) -> bool {
     matches!(role_code, ADMIN | PLANNER | SUPERVISOR)
 }
 
+/// May the given role perform quality actions — placing/releasing holds,
+/// dispositioning NCRs (§8, M7/M8)? Quality and Supervisor, plus Admin.
+pub fn can_manage_quality(role_code: &str) -> bool {
+    matches!(role_code, ADMIN | SUPERVISOR | QUALITY)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,5 +68,14 @@ mod tests {
         assert!(can_promote_revision(PLANNER));
         assert!(!can_promote_revision(OPERATOR));
         assert!(!can_promote_revision(QUALITY));
+    }
+
+    #[test]
+    fn quality_actions_gated_to_quality_supervisor_admin() {
+        assert!(can_manage_quality(QUALITY));
+        assert!(can_manage_quality(SUPERVISOR));
+        assert!(can_manage_quality(ADMIN));
+        assert!(!can_manage_quality(OPERATOR));
+        assert!(!can_manage_quality(PLANNER));
     }
 }
