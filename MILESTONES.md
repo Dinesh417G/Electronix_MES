@@ -9,7 +9,7 @@ before advancing (§12).
 | M0 — Scaffold + dev CI | ✅ Done | 2026-07-22 |
 | M1 — Master data + auth | ✅ Done | 2026-07-22 |
 | M2 — Ingestion + state machine | ✅ Done | 2026-07-22 |
-| M3 — Work orders + execution | ⬜ Not started | — |
+| M3 — Work orders + execution | ✅ Done | 2026-07-22 |
 | M4 — DNC orchestration | ⬜ Not started | — |
 | M5 — Downtime analytics | ⬜ Not started | — |
 | M6 — OEE | ⬜ Not started | — |
@@ -205,3 +205,62 @@ an unknown source is dropped gracefully.
   per-work-center) can hang off ingest later without touching the engine.
 - `/v1/ingest` currently requires an authenticated caller; per-device ingest
   tokens (§14) refine this in a later pass.
+
+---
+
+## M3 — Work orders + execution ✅
+
+**Goal (§12):** WO lifecycle, `/v1/exec`, counts, scrap+reasons, downtime
+classify/split, WS channel, `programs` wired to `routing_ops`.
+
+**Acceptance:** full simulated order start→complete via API; WS events observed
+in a test client.
+
+### What landed
+
+- **Lifecycles (`mes-core::work_order`, pure)** — `WoStatus`
+  (Draft→Released→InProgress→Completed→Closed, plus Cancelled) and `OpStatus`
+  (Pending→InProgress→Completed) with `can_transition` guards. Illegal
+  transitions are rejected before any DB write; one definition shared by
+  handlers and tests. 5 unit tests.
+- **Schema** — migration `0004` (additive): `work_orders`, `wo_operations`
+  (unique `(work_order_id, op_no)`); `production_counts` gains nullable
+  `wo_operation_id` + `scrap_reason_id` so operator counts tie to the operation
+  and scrap carries a reason.
+- **`/v1/orders`** — create (with operations, Planner/Admin), list, get detail,
+  and release/cancel/close transitions (validated + audited + WS-published).
+- **`/v1/exec`** — operator actions (any authenticated user): start operation
+  (auto-advances the WO Released→InProgress), record good/scrap counts (scrap
+  **requires** a reason; counts append to the `production_counts` ledger and roll
+  up onto the operation atomically), complete operation, complete WO, and
+  classify / **split** a downtime event (split cuts one event into two at a
+  timestamp, optionally classifying each).
+- **`/ws`** — a `tokio::broadcast` bus on `AppState`; every exec/order mutation
+  publishes a typed `WsEvent` (`mes-client::ws`) forwarded to subscribers as
+  JSON frames.
+- **Programs** — `/v1/master/programs` create/list wired to `routing_ops`/parts
+  (the §7 join to DNC's library, consumed at M4).
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green (16
+  mes-core unit tests incl. WO/op transitions).
+- **Integration suite** (`tests/m3_orders_exec.rs`, fresh schema per test):
+  - `full_order_lifecycle` — Operator create → **403**; Planner create → release
+    → (re-release → **409** guard) → operator start (WO auto → in_progress) →
+    scrap-without-reason → **400** → good + scrap-with-reason counts roll up →
+    complete op → complete WO → close; `production_counts` ledger has 2 rows.
+  - `ws_client_observes_execution_events` — a **real `tokio-tungstenite` client**
+    connects to a served instance and observes `work_order_status_changed`,
+    `operation_started`, `count_recorded`, and `operation_completed`. The served
+    router and the HTTP-driving router share one `AppState` (hence one broadcast
+    bus), so published events reach the socket.
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- The WS test drives HTTP via the in-process router and reads events over a real
+  WebSocket; both share the same `AppState` broadcast sender (a `broadcast::Sender`
+  clone points at the same channel).
+- Downtime `split`/`classify` operate on the events M2 derives; the reason
+  **trees** and Six-Big-Losses mapping arrive at M5.

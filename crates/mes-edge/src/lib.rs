@@ -10,11 +10,14 @@ pub mod api;
 pub mod auth;
 pub mod auth_routes;
 pub mod config;
+pub mod exec;
 pub mod extract;
 pub mod http;
 pub mod ingest;
 pub mod master;
+pub mod orders;
 pub mod process;
+pub mod ws;
 
 use anyhow::Context;
 
@@ -44,7 +47,7 @@ pub async fn run() -> anyhow::Result<()> {
     };
 
     let auth = auth::AuthConfig::new(cfg.jwt_secret.clone(), cfg.jwt_ttl_secs);
-    let state = http::AppState { pool, auth };
+    let state = http::AppState::new(pool, auth);
     let app = http::router(state);
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind)

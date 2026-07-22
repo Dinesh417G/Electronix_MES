@@ -77,10 +77,10 @@ pub async fn setup() -> Option<Ctx> {
 
     mes_db::run_migrations(&pool).await.expect("migrate");
 
-    let state = AppState {
-        pool: Some(pool),
-        auth: AuthConfig::new("integration-test-secret".to_string(), 3600),
-    };
+    let state = AppState::new(
+        Some(pool),
+        AuthConfig::new("integration-test-secret".to_string(), 3600),
+    );
     Some(Ctx {
         state,
         admin_pool,

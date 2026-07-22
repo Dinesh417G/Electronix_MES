@@ -9,9 +9,10 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use mes_client::master::{
-    Area, AreaInput, Part, PartInput, Site, SiteInput, User, UserInput, WorkCenter, WorkCenterInput,
+    Area, AreaInput, Part, PartInput, Program, ProgramInput, Site, SiteInput, User, UserInput,
+    WorkCenter, WorkCenterInput,
 };
-use mes_db::repo;
+use mes_db::{repo, repo_orders};
 
 use crate::api::{audit, err, repo_err, require_pool, ApiErr};
 use crate::auth::hash_secret;
@@ -46,6 +47,40 @@ pub fn routes() -> Router<AppState> {
             get(get_part).put(update_part).delete(delete_part),
         )
         .route("/users", get(list_users).post(create_user))
+        .route("/programs", get(list_programs).post(create_program))
+}
+
+// ---- Programs (routing_op ↔ DNC library, §7/§8.4) ------------------------
+
+async fn create_program(
+    State(state): State<AppState>,
+    MasterWriter(actor): MasterWriter,
+    Json(input): Json<ProgramInput>,
+) -> Result<(StatusCode, Json<Program>), ApiErr> {
+    let pool = require_pool(&state)?;
+    let program = repo_orders::create_program(pool, &input)
+        .await
+        .map_err(repo_err)?;
+    audit(
+        pool,
+        Some(&actor.user_id),
+        "create",
+        "program",
+        Some(&program.id),
+        None,
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(program)))
+}
+
+async fn list_programs(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Result<Json<Vec<Program>>, ApiErr> {
+    let pool = require_pool(&state)?;
+    Ok(Json(
+        repo_orders::list_programs(pool).await.map_err(repo_err)?,
+    ))
 }
 
 // ---- Sites ---------------------------------------------------------------

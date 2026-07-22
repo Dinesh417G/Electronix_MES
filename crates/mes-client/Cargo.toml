@@ -9,4 +9,5 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 chrono = { workspace = true }
+rust_decimal = { workspace = true }
 utoipa = { workspace = true }

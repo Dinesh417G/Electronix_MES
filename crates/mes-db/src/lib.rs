@@ -10,6 +10,7 @@
 
 pub mod repo;
 pub mod repo_ingest;
+pub mod repo_orders;
 
 use std::time::Duration;
 
