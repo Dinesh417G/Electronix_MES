@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod analytics;
 pub mod api;
 pub mod auth;
 pub mod auth_routes;
