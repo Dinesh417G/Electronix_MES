@@ -178,6 +178,10 @@ async fn complete_op(
         work_order_id: op.work_order_id.clone(),
         wo_operation_id: op_id.clone(),
     });
+
+    // Auto-schedule the next operation's DNC transfer, if any (§8.4). Best-effort.
+    crate::dnc::on_job_complete(&state, &op_id).await;
+
     Ok(Json(updated))
 }
 

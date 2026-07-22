@@ -4,6 +4,8 @@
 //! routers (`/v1/*`, `/ws`) are mounted here from M1 onward (§10). Every
 //! handler runs inside a tracing span via `TraceLayer` (§14).
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -11,6 +13,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use mes_client::ws::WsEvent;
 use mes_client::HealthResponse;
+use mes_dnc_bridge::{DisconnectedDaemon, DncDaemon};
 use sqlx::PgPool;
 use tokio::sync::broadcast;
 use tower_http::trace::TraceLayer;
@@ -30,13 +33,28 @@ pub struct AppState {
     pub auth: AuthConfig,
     /// Broadcast bus for live `/ws` events (§10, §12 M3).
     pub events: broadcast::Sender<WsEvent>,
+    /// Command channel to the `dnc-daemon` (§8.4, §12 M4). Defaults to a
+    /// disconnected stub so orchestration degrades gracefully when no CNC is
+    /// present; tests inject a virtual daemon.
+    pub dnc: Arc<dyn DncDaemon>,
 }
 
 impl AppState {
-    /// Build state with a fresh event bus.
+    /// Build state with a fresh event bus and a disconnected DNC daemon.
     pub fn new(pool: Option<PgPool>, auth: AuthConfig) -> Self {
         let (events, _) = broadcast::channel(1024);
-        Self { pool, auth, events }
+        Self {
+            pool,
+            auth,
+            events,
+            dnc: Arc::new(DisconnectedDaemon),
+        }
+    }
+
+    /// Replace the DNC daemon handle (production wiring / tests).
+    pub fn with_dnc(mut self, dnc: Arc<dyn DncDaemon>) -> Self {
+        self.dnc = dnc;
+        self
     }
 
     /// Publish a live event; a send with no subscribers is not an error.
@@ -66,6 +84,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/v1/ingest", crate::ingest::routes())
         .nest("/v1/orders", crate::orders::routes())
         .nest("/v1/exec", crate::exec::routes())
+        .nest("/v1/dnc", crate::dnc::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

@@ -25,6 +25,12 @@ pub fn can_read_master(_role_code: &str) -> bool {
     true
 }
 
+/// May the given role promote/reject a program revision (§8.4)? Supervisors do
+/// this review, alongside Admin/Planner. Operators cannot.
+pub fn can_promote_revision(role_code: &str) -> bool {
+    matches!(role_code, ADMIN | PLANNER | SUPERVISOR)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +53,14 @@ mod tests {
     #[test]
     fn everyone_reads_master() {
         assert!(can_read_master(OPERATOR));
+    }
+
+    #[test]
+    fn supervisor_promotes_revisions_operator_does_not() {
+        assert!(can_promote_revision(SUPERVISOR));
+        assert!(can_promote_revision(ADMIN));
+        assert!(can_promote_revision(PLANNER));
+        assert!(!can_promote_revision(OPERATOR));
+        assert!(!can_promote_revision(QUALITY));
     }
 }

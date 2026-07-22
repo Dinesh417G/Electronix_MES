@@ -37,4 +37,20 @@ pub enum WsEvent {
         downtime_event_id: String,
         reason_id: String,
     },
+    /// A DNC transfer was scheduled — the kiosk shows "Job ready, fetch program"
+    /// (scripted, offline, no LLM call; §8.4, §11).
+    DncTransferScheduled {
+        transfer_id: String,
+        program_id: String,
+        program_identifier: String,
+        wo_operation_id: Option<String>,
+    },
+    /// A DNC transfer completed — the kiosk clears the fetch prompt (§8.4).
+    DncTransferCompleted { transfer_id: String },
+    /// An operator-edited program came back as a draft revision — the supervisor
+    /// console shows it in the review queue (§8.4). **Never auto-promoted** (§3).
+    ProgramRevisionDrafted {
+        revision_id: String,
+        program_id: String,
+    },
 }

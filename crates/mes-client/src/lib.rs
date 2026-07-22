@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod dnc;
 pub mod exec;
 pub mod ingest;
 pub mod master;
