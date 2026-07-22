@@ -61,4 +61,11 @@ pub enum WsEvent {
         quality: f64,
         oee: f64,
     },
+    /// An inspection failed and auto-raised an NCR + hold (§8, §12 M8) — the
+    /// QMS console and andon feed surface it.
+    NcrRaised {
+        ncr_id: String,
+        ncr_no: String,
+        lot_id: Option<String>,
+    },
 }

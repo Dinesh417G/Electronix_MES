@@ -13,6 +13,7 @@ pub mod exec;
 pub mod ingest;
 pub mod master;
 pub mod orders;
+pub mod qms;
 pub mod trace;
 pub mod ws;
 

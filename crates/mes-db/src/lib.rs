@@ -14,6 +14,7 @@ pub mod repo_dnc;
 pub mod repo_ingest;
 pub mod repo_oee;
 pub mod repo_orders;
+pub mod repo_qms;
 pub mod repo_trace;
 
 use std::time::Duration;
