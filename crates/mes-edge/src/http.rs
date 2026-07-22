@@ -45,6 +45,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api-doc/openapi.json", get(openapi_json))
         .nest("/v1/auth", crate::auth_routes::routes())
         .nest("/v1/master", crate::master::routes())
+        .nest("/v1/ingest", crate::ingest::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

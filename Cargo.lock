@@ -1120,6 +1120,7 @@ dependencies = [
  "mes-client",
  "mes-core",
  "mes-db",
+ "mes-ingest",
  "serde",
  "serde_json",
  "sqlx",
@@ -1147,8 +1148,11 @@ name = "mes-ingest"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
+ "mes-client",
  "mes-core",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 

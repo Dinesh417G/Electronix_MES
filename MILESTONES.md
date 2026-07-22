@@ -8,7 +8,7 @@ before advancing (§12).
 |---|---|---|
 | M0 — Scaffold + dev CI | ✅ Done | 2026-07-22 |
 | M1 — Master data + auth | ✅ Done | 2026-07-22 |
-| M2 — Ingestion + state machine | ⬜ Not started | — |
+| M2 — Ingestion + state machine | ✅ Done | 2026-07-22 |
 | M3 — Work orders + execution | ⬜ Not started | — |
 | M4 — DNC orchestration | ⬜ Not started | — |
 | M5 — Downtime analytics | ⬜ Not started | — |
@@ -148,3 +148,60 @@ master data).
   schema and get their handlers when their consuming milestones need them.
 - Queries are runtime-checked for now; migrating to compile-checked (`query!`)
   awaits a committed sqlx prepared-cache (§14).
+
+---
+
+## M2 — Ingestion + state machine ✅
+
+**Goal (§12):** `SignalSource` trait, adapters, hypertables, and the state
+machine producing `machine_states` + auto `downtime_events`.
+
+**Acceptance:** a scripted hour (run→micro-stop→down→run) matches a golden file;
+an unknown source is dropped gracefully.
+
+### What landed
+
+- **State machine (`mes-core::state_machine`, pure/I/O-free §8.1)** — turns a
+  time-ordered cycle-pulse stream over a window into non-overlapping
+  Running/MicroStop/Down/PlannedStop intervals and derives an unclassified
+  `DowntimeEvent` per stop. Documented, configurable thresholds (the v1 spec
+  left exact numbers open): `debounce` 2s, `micro_stop_after` 60s (gaps within
+  it are normal cycle variation → Running), `down_after` 5m (a stop ≤ it is a
+  MicroStop, longer is Down). Includes planned-stop overlay and
+  shift-boundary interval splitting. 11 unit tests including the **golden hour**.
+- **Schema** — migration `0003` (additive): `signal_sources` registry,
+  `machine_events` **[hypertable]**, `production_counts` **[hypertable]**,
+  `machine_states`, `downtime_events`, and the `downtime_reasons`/`scrap_reasons`
+  lookups. Hypertable PKs are composite `(ts, id)` so the partition column is
+  covered.
+- **Ingestion (`mes-ingest`)** — the `SignalSource` async trait plus a scripted
+  `SimSource` (used by the E2E test and the future `machine-sim` tool). Wire
+  DTOs (`RawSignal`/`SignalEvent`/`IngestResult`) live in `mes-client`.
+- **Pipeline** — `/v1/ingest/signals` resolves each signal's source; unknown or
+  disabled sources are **dropped and logged, never errored** (§9); known cycle/
+  heartbeat signals append to `machine_events`, counts to `production_counts`.
+  `/v1/ingest/recompute` runs `process::recompute_states` → the pure engine →
+  and atomically **replaces** the window's `machine_states` + unclassified
+  `downtime_events` (operator-classified rows preserved), so recompute is
+  idempotent.
+- Integration test harness extracted to `tests/common/mod.rs` and shared by the
+  M1 and M2 suites.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green locally
+  (state-machine golden + planned/shift/debounce unit tests; sim source test).
+- **Integration suite** (`tests/m2_ingest_states.rs`, fresh schema per test):
+  the scripted hour ingested through the real HTTP pipeline recomputes to the
+  **exact golden** run→micro-stop→down→run states (+2 downtime events), recompute
+  is idempotent, and unknown / disabled sources are dropped with nothing
+  persisted. Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- MQTT/HTTP-line/TCP adapters are represented by the trait + sim adapter for
+  M2; the live transports land with `machine-sim` and M3/M4 wiring. Recompute is
+  invoked explicitly via the endpoint here; automatic scheduling (debounced,
+  per-work-center) can hang off ingest later without touching the engine.
+- `/v1/ingest` currently requires an authenticated caller; per-device ingest
+  tokens (§14) refine this in a later pass.

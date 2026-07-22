@@ -1,13 +1,18 @@
 //! `mes-ingest` — machine signal ingestion (§9).
 //!
-//! Defines the `SignalSource` trait that MQTT/HTTP/TCP-line/sim adapters
-//! implement (M2). DNC transfer events do **not** flow through this path — they
-//! are owned by `mes-dnc-bridge` (§8.4, §9). M0 lands only the trait shape;
-//! adapters are built in M2.
+//! A [`SignalSource`] is a transport that yields normalized
+//! [`RawSignal`](mes_client::ingest::RawSignal)s — MQTT topics, HTTP line feeds,
+//! TCP streams, or the scripted [`sim`] source used in tests. Whatever the
+//! transport, downstream persistence treats every signal the same and drops
+//! those from an unregistered source (§9). DNC transfer events do **not** flow
+//! through this path — they are owned by `mes-dnc-bridge` (§8.4, §9).
 
 #![forbid(unsafe_code)]
 
+pub mod sim;
+
 use async_trait::async_trait;
+use mes_client::ingest::RawSignal;
 
 /// Errors an ingest adapter may raise while pulling signals.
 #[derive(Debug, thiserror::Error)]
@@ -16,31 +21,15 @@ pub enum IngestError {
     Unavailable(String),
 }
 
-/// A source of raw machine signals. Adapters (MQTT/HTTP/TCP/sim) implement this
-/// in M2. Unknown or malformed sources are logged and dropped — ingest must
+/// A source of raw machine signals. Adapters (MQTT/HTTP/TCP/sim) implement this.
+/// Unknown or malformed input is logged and dropped by the caller — ingest must
 /// never crash on bad input (§9).
 #[async_trait]
 pub trait SignalSource: Send + Sync {
     /// Stable identifier for this source, used in structured logs.
     fn name(&self) -> &str;
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct Dummy;
-
-    #[async_trait]
-    impl SignalSource for Dummy {
-        fn name(&self) -> &str {
-            "dummy"
-        }
-    }
-
-    #[test]
-    fn trait_object_is_usable() {
-        let s: Box<dyn SignalSource> = Box::new(Dummy);
-        assert_eq!(s.name(), "dummy");
-    }
+    /// Pull the next batch of available signals. An empty batch means "nothing
+    /// right now", not end-of-stream.
+    async fn poll(&mut self) -> Result<Vec<RawSignal>, IngestError>;
 }

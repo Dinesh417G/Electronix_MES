@@ -9,6 +9,7 @@
 //! migration file — add a new one.
 
 pub mod repo;
+pub mod repo_ingest;
 
 use std::time::Duration;
 
