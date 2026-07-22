@@ -8,6 +8,8 @@
 //! Migrations are **append-only** after merge (§14): never edit a shipped
 //! migration file — add a new one.
 
+pub mod repo;
+
 use std::time::Duration;
 
 use sqlx::migrate::Migrator;

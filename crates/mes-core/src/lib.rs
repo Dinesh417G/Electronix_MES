@@ -12,6 +12,7 @@
 
 pub mod error;
 pub mod id;
+pub mod roles;
 
 pub use error::{CoreError, CoreResult};
 pub use id::new_id;

@@ -14,6 +14,8 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 
+use crate::auth::AuthConfig;
+
 /// Name reported in health payloads and OpenAPI metadata.
 const SERVICE: &str = "mes-edge";
 
@@ -22,6 +24,8 @@ const SERVICE: &str = "mes-edge";
 pub struct AppState {
     /// `None` until a database is configured (M0 allows liveness-only boot).
     pub pool: Option<PgPool>,
+    /// JWT signing/verification config for authenticated routes (§12 M1).
+    pub auth: AuthConfig,
 }
 
 /// OpenAPI document root. Grows as `/v1/*` handlers are annotated (§10).
@@ -39,6 +43,8 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api-doc/openapi.json", get(openapi_json))
+        .nest("/v1/auth", crate::auth_routes::routes())
+        .nest("/v1/master", crate::master::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -108,7 +114,10 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_is_false_without_pool() {
-        let state = AppState { pool: None };
+        let state = AppState {
+            pool: None,
+            auth: AuthConfig::new("test".to_string(), 3600),
+        };
         assert!(!is_ready(&state).await);
     }
 }

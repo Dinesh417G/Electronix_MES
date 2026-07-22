@@ -14,6 +14,10 @@ pub struct Config {
     pub database_url: Option<String>,
     /// Upper bound on pooled DB connections.
     pub db_max_connections: u32,
+    /// Secret used to sign/verify bearer tokens (§14 — secrets via env only).
+    pub jwt_secret: String,
+    /// Token lifetime in seconds.
+    pub jwt_ttl_secs: i64,
 }
 
 impl Config {
@@ -26,10 +30,29 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(10);
 
+        // MES_JWT_SECRET should always be set in a real deployment. When absent
+        // (local dev/smoke), fall back to an ephemeral random secret and warn —
+        // tokens then simply don't survive a restart, which is acceptable there.
+        let jwt_secret = match env::var("MES_JWT_SECRET") {
+            Ok(s) if !s.is_empty() => s,
+            _ => {
+                tracing::warn!(
+                    "MES_JWT_SECRET not set — using an ephemeral secret; tokens won't survive restart"
+                );
+                mes_core::new_id()
+            }
+        };
+        let jwt_ttl_secs = env::var("MES_JWT_TTL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(43_200); // 12h
+
         Ok(Self {
             bind,
             database_url,
             db_max_connections,
+            jwt_secret,
+            jwt_ttl_secs,
         })
     }
 }

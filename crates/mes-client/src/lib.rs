@@ -6,6 +6,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod auth;
+pub mod master;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -27,6 +30,24 @@ impl HealthResponse {
             service: service.to_string(),
             status: "ok".to_string(),
             version: version.to_string(),
+        }
+    }
+}
+
+/// Standard error envelope returned by the API on non-2xx responses.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ApiError {
+    /// Machine-readable error code, e.g. `"unauthorized"`, `"forbidden"`.
+    pub error: String,
+    /// Human-readable detail.
+    pub message: String,
+}
+
+impl ApiError {
+    pub fn new(error: &str, message: impl Into<String>) -> Self {
+        Self {
+            error: error.to_string(),
+            message: message.into(),
         }
     }
 }
