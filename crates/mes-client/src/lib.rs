@@ -8,6 +8,7 @@
 
 pub mod analytics;
 pub mod auth;
+pub mod cmms;
 pub mod dnc;
 pub mod exec;
 pub mod ingest;
