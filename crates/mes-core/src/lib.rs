@@ -14,6 +14,7 @@ pub mod analytics;
 pub mod dnc;
 pub mod error;
 pub mod id;
+pub mod oee;
 pub mod roles;
 pub mod state_machine;
 pub mod work_order;

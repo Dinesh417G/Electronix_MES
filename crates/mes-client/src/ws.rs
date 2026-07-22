@@ -53,4 +53,12 @@ pub enum WsEvent {
         revision_id: String,
         program_id: String,
     },
+    /// Live OEE snapshot for a work center (§8.2, §12 M6) — dashboards update.
+    OeeSnapshot {
+        work_center_id: String,
+        availability: f64,
+        performance: f64,
+        quality: f64,
+        oee: f64,
+    },
 }

@@ -143,6 +143,10 @@ async fn record_count(
         good: input.good,
         scrap: input.scrap,
     });
+
+    // Broadcast a live OEE snapshot for the work center (§8.2). Best-effort.
+    crate::analytics::publish_oee_snapshot(&state, &wc_id).await;
+
     Ok(Json(updated))
 }
 
