@@ -12,7 +12,7 @@ before advancing (§12).
 | M3 — Work orders + execution | ✅ Done | 2026-07-22 |
 | M4 — DNC orchestration | ✅ Done | 2026-07-22 |
 | M5 — Downtime analytics | ✅ Done | 2026-07-22 |
-| M6 — OEE | ⬜ Not started | — |
+| M6 — OEE | ✅ Done | 2026-07-22 |
 | M7 — Traceability | ⬜ Not started | — |
 | M8 — QMS | ⬜ Not started | — |
 | M9 — CMMS | ⬜ Not started | — |
@@ -374,3 +374,59 @@ fixture.
   tree is in place for roll-up-to-parent grouping when the supervisor UI needs
   it (M11). Unclassified downtime is excluded from the Pareto but included in
   the raw trend. The OEE **engine** (A×P×Q, continuous aggregates) is M6.
+
+---
+
+## M6 — OEE ✅  · 🔒 schema freeze
+
+**Goal (§12):** Rust OEE engine + continuous aggregates (`oee_hourly`,
+`oee_by_shift`), `/v1/analytics`, live shift OEE over WS.
+
+**Acceptance:** golden-day test — A/P/Q/OEE within 0.1% in both Rust and SQL
+paths; shift-boundary test passes.
+
+### What landed
+
+- **OEE engine (`mes-core::oee`, pure)** — `compute()`: Availability = run ÷
+  planned-production; Performance = (ideal-cycle × total) ÷ run, **capped at
+  1.0**; Quality = good ÷ total; OEE = A×P×Q. Zero denominators yield 0, not
+  NaN. 3 unit tests incl. the hand-computed golden fixture (A=0.8, P=0.75,
+  Q=0.9, OEE=0.54).
+- **Schema** — migration `0007` (additive): `work_centers.ideal_cycle_seconds`
+  (the Performance-factor rate). **🔒 Schema freeze:** core production/QMS/CMMS
+  tables are additive-only from here (§6, §14).
+- **Dual paths (`mes-db::repo_oee`)** — `oee_inputs` (Rust path: raw scalars →
+  `mes_core::oee::compute`) and `oee_sql` (SQL path: one CTE computing A/P/Q/OEE
+  with the *same* interval-clamping and performance cap). `oee_by_shift` splits
+  the window by the work center's site shifts (per day, overnight-aware).
+- **`/v1/analytics`** — `oee` (window) and `oee/by-shift`.
+- **Live OEE over WS** — completing a count publishes an `OeeSnapshot` WsEvent
+  with the work center's day-to-date OEE (best-effort, §8.2).
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green.
+- **Integration suite** (`tests/m6_oee.rs`, fresh schema per test):
+  - `golden_day_rust_and_sql_agree` — a seeded day (run 21600s, planned-stop
+    1800s, down 5400s, counts 729/810, ideal 20s) yields **A=0.80, P=0.75,
+    Q=0.90, OEE=0.54** via the API (Rust path), and `oee_sql` (SQL path) agrees
+    **within 0.1%** on every factor.
+  - `oee_by_shift_respects_boundary` — two back-to-back shifts split at exactly
+    12:00 with no overlap and the correct per-shift OEE (A≈0.833, B=0.50).
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- **Continuous aggregates deferred.** TimescaleDB continuous aggregates require
+  non-transactional DDL (`CREATE MATERIALIZED VIEW … WITH
+  (timescaledb.continuous)` cannot run inside a transaction), while `sqlx
+  migrate` wraps each migration in one. OEE hourly/by-shift is therefore served
+  by SQL queries with **identical semantics**; materialized continuous
+  aggregates are a pure performance optimization to add when a non-transactional
+  migration path is introduced (tracked for a follow-up; does not affect the M6
+  acceptance, which is the dual Rust/SQL cross-check + shift boundary).
+- `ideal_cycle_seconds` is per work center (nominal rate) for v1; a
+  per-routing-op override can be layered additively (§14) without a breaking
+  change.
+- The live `OeeSnapshot` is day-to-date; scoping it to the *current shift*
+  reuses the same `oee_by_shift` logic when the kiosk/console needs it (M11).
