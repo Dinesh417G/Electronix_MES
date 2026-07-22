@@ -1125,8 +1125,12 @@ dependencies = [
 name = "mes-dnc-bridge"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "mes-core",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
@@ -1144,6 +1148,7 @@ dependencies = [
  "mes-client",
  "mes-core",
  "mes-db",
+ "mes-dnc-bridge",
  "mes-ingest",
  "serde",
  "serde_json",

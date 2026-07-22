@@ -10,6 +10,7 @@ pub mod api;
 pub mod auth;
 pub mod auth_routes;
 pub mod config;
+pub mod dnc;
 pub mod exec;
 pub mod extract;
 pub mod http;
@@ -47,7 +48,14 @@ pub async fn run() -> anyhow::Result<()> {
     };
 
     let auth = auth::AuthConfig::new(cfg.jwt_secret.clone(), cfg.jwt_ttl_secs);
-    let state = http::AppState::new(pool, auth);
+    let mut state = http::AppState::new(pool, auth);
+    // Wire a real dnc-daemon client when an address is configured; otherwise the
+    // default disconnected stub degrades gracefully (§8.4).
+    if let Ok(addr) = std::env::var("MES_DNC_ADDR") {
+        if !addr.is_empty() {
+            state = state.with_dnc(std::sync::Arc::new(mes_dnc_bridge::TcpDncClient::new(addr)));
+        }
+    }
     let app = http::router(state);
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind)

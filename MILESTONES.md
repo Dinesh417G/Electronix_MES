@@ -10,7 +10,7 @@ before advancing (§12).
 | M1 — Master data + auth | ✅ Done | 2026-07-22 |
 | M2 — Ingestion + state machine | ✅ Done | 2026-07-22 |
 | M3 — Work orders + execution | ✅ Done | 2026-07-22 |
-| M4 — DNC orchestration | ⬜ Not started | — |
+| M4 — DNC orchestration | ✅ Done | 2026-07-22 |
 | M5 — Downtime analytics | ⬜ Not started | — |
 | M6 — OEE | ⬜ Not started | — |
 | M7 — Traceability | ⬜ Not started | — |
@@ -264,3 +264,69 @@ in a test client.
   clone points at the same channel).
 - Downtime `split`/`classify` operate on the events M2 derives; the reason
   **trees** and Six-Big-Losses mapping arrive at M5.
+
+---
+
+## M4 — DNC orchestration ✅
+
+**Goal (§12):** `mes-dnc-bridge`, auto-schedule on job completion,
+`dnc_transfer_events`, kiosk notification event, `program_revisions` created as
+Draft on an edited-program receive.
+
+**Acceptance:** simulated job-complete → transfer scheduled → simulated
+dnc-daemon ack → event clears; simulated edited-program receive → draft revision
+created and explicitly **not** auto-promoted.
+
+> **Protocol note (§8.4, §17 Q3):** the real `dnc-daemon` repo was not in this
+> session, so the NDJSON command/event shapes are a **documented assumption
+> isolated to `mes-dnc-bridge::protocol`**. Callers work only in terms of typed
+> `DncCommand`/`DncEvent`, so reconciling with the real daemon later changes one
+> module, not the orchestration. Tested entirely against a **virtual daemon**,
+> as §13 requires ("never real CNC hardware").
+
+### What landed
+
+- **Lifecycles (`mes-core::dnc`, pure)** — `TransferStatus`
+  (Scheduled→Notified→Fetched→Completed, plus Failed from any active state) and
+  `RevisionStatus` (Draft→Promoted|Rejected). The revision table only allows
+  Draft→Promoted, structurally enforcing "never auto-promoted" (§3). 5 unit
+  tests.
+- **Transport (`mes-dnc-bridge`)** — the typed NDJSON `protocol` (assumption,
+  isolated), a swappable `DncDaemon` command trait, and three impls:
+  `VirtualDaemon` (records commands, deterministic refs — tests/§13),
+  `DisconnectedDaemon` (default; sends fail cleanly so a plant with no CNC
+  degrades gracefully), and `TcpDncClient` (real socket at `127.0.0.1:8765`).
+- **Schema** — migration `0005` (additive): `dnc_transfer_events`,
+  `program_revisions` (unique `(program_id, revision_no)`).
+- **Orchestration (`mes-edge::dnc`)** — `on_job_complete` (wired into
+  `/v1/exec/.../complete`, best-effort) resolves the next queued operation's
+  program (routing-op program preferred, else the part's), sends the daemon a
+  `SendProgram`, records a Scheduled transfer, and publishes a kiosk
+  `DncTransferScheduled` WS event. `handle_daemon_event` marks transfers
+  Completed/Failed (clearing the kiosk prompt) and turns a `program_received`
+  into a **draft** revision + a supervisor `ProgramRevisionDrafted` event.
+- **`/v1/dnc`** — list/manual-trigger/retry transfers, list revisions,
+  promote/reject (Supervisor/Admin/Planner via `roles::can_promote_revision`),
+  and a `daemon-events` seam the virtual daemon / `machine-sim` drive (§13).
+- **AppState** gains a swappable `Arc<dyn DncDaemon>` (default disconnected; real
+  client wired from `MES_DNC_ADDR`).
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green (mes-core
+  dnc transitions + roles; mes-dnc-bridge transport unit tests).
+- **Integration suite** (`tests/m4_dnc.rs`, fresh schema per test, virtual
+  daemon injected): complete op #10 → the daemon receives `SendProgram("O1000")`
+  and a **Scheduled** transfer appears → simulated `transfer_completed` →
+  transfer **Completed** (`completed_at` set) → simulated `program_received` → a
+  **draft** revision (asserted *not* promoted) → Operator promote → **403**,
+  Supervisor promote → **promoted**, re-promote → **409**. Runs in CI against the
+  TimescaleDB service.
+
+### Notes / deferrals
+
+- The daemon's real acknowledgement/ref shape and its inbound event loop wiring
+  are the parts to confirm against `dnc-daemon` source; the `TcpDncClient`
+  currently generates a local ref as a placeholder (flagged in-code).
+- `machine-sim`'s virtual dnc-daemon mode (§13) reuses the same
+  `DncEvent`/`daemon-events` seam this milestone establishes.

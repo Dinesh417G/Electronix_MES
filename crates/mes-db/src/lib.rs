@@ -9,6 +9,7 @@
 //! migration file — add a new one.
 
 pub mod repo;
+pub mod repo_dnc;
 pub mod repo_ingest;
 pub mod repo_orders;
 
