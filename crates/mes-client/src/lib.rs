@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod ingest;
 pub mod master;
 
 use serde::{Deserialize, Serialize};

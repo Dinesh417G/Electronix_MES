@@ -6,6 +6,11 @@ license.workspace = true
 
 [dependencies]
 mes-core = { workspace = true }
+mes-client = { workspace = true }
 async-trait = "0.1"
+chrono = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

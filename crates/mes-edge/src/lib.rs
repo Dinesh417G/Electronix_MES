@@ -12,7 +12,9 @@ pub mod auth_routes;
 pub mod config;
 pub mod extract;
 pub mod http;
+pub mod ingest;
 pub mod master;
+pub mod process;
 
 use anyhow::Context;
 
