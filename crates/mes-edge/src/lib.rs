@@ -19,6 +19,7 @@ pub mod ingest;
 pub mod master;
 pub mod orders;
 pub mod process;
+pub mod trace;
 pub mod ws;
 
 use anyhow::Context;

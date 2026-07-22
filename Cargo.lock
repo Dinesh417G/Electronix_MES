@@ -1150,6 +1150,7 @@ dependencies = [
  "mes-db",
  "mes-dnc-bridge",
  "mes-ingest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sqlx",

@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod analytics;
+pub mod barcode;
 pub mod dnc;
 pub mod error;
 pub mod id;

@@ -13,7 +13,7 @@ before advancing (§12).
 | M4 — DNC orchestration | ✅ Done | 2026-07-22 |
 | M5 — Downtime analytics | ✅ Done | 2026-07-22 |
 | M6 — OEE | ✅ Done | 2026-07-22 |
-| M7 — Traceability | ⬜ Not started | — |
+| M7 — Traceability | ✅ Done | 2026-07-22 |
 | M8 — QMS | ⬜ Not started | — |
 | M9 — CMMS | ⬜ Not started | — |
 | M10 — ERP integration page | ⬜ Not started | — |
@@ -430,3 +430,53 @@ paths; shift-boundary test passes.
   change.
 - The live `OeeSnapshot` is day-to-date; scoping it to the *current shift*
   reuses the same `oee_by_shift` logic when the kiosk/console needs it (M11).
+
+---
+
+## M7 — Traceability ✅
+
+**Goal (§12):** lots/serials, genealogy, recursive forward/backward trace,
+barcode format `EMX1|<type>|<id>`.
+
+**Acceptance:** a 3-level assembly fixture traces both directions; a held lot
+blocks issue.
+
+### What landed
+
+- **Barcode (`mes-core::barcode`, pure)** — `encode`/`parse` for the
+  `EMX1|<type>|<id>` format, with `LOT`/`SER` type codes. 3 unit tests
+  (roundtrip, malformed rejection, pipe-in-id handling).
+- **Schema** — migration `0008` (additive, all new tables): `lots`, `serials`,
+  `genealogy` (parent=assembly/output → child=component/input edges),
+  `material_txns` (issue/receive/adjust ledger), and `holds` (introduced here
+  for "held lot blocks issue"; M8 QMS extends it additively).
+- **Recursive trace (`mes-db::repo_trace`)** — `trace_backward` (all components
+  consumed by an assembly) and `trace_forward` (all assemblies a component ended
+  up in) via `WITH RECURSIVE` CTEs, cycle-guarded (depth < 64), de-duplicated to
+  min-depth, resolving each node's `lot_no`/`serial_no`.
+- **Hold-checked issue** — `issue_material` refuses to issue a lot/serial under
+  an **active hold** (returns Conflict → 409).
+- **`/v1/trace`** — create lots/serials/genealogy + issue material (any
+  authenticated user); place/release holds (**quality role** via
+  `roles::can_manage_quality` — Quality/Supervisor/Admin); backward/forward trace
+  lookups; and a barcode-parse endpoint.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green.
+- **Integration suite** (`tests/m7_traceability.rs`, fresh schema per test):
+  - `three_level_assembly_traces_both_directions` — FG→SUB→{RAW-A,RAW-B};
+    **backward** from FG returns SUB (depth 1) + both raws (depth 2), **forward**
+    from RAW-A returns SUB (depth 1) + FG (depth 2).
+  - `held_lot_blocks_issue` — un-held issue → 201; Operator place-hold → **403**;
+    Quality place-hold → 201; issue of the held lot → **409**; release → issue
+    → 201.
+  - `barcode_parse_roundtrip` — `EMX1|LOT|01HXYZ` parses; garbage → 400.
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- Trace is modelled at lot/serial granularity via generic `entity_type` edges;
+  serial-level-vs-lot-only default per part (§17 Q6) is a policy toggle for a
+  launch customer, not a schema change. `holds` lands at M7 for the issue-block;
+  M8 adds the NCR linkage additively.
