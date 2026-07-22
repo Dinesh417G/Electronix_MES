@@ -14,7 +14,7 @@ before advancing (§12).
 | M5 — Downtime analytics | ✅ Done | 2026-07-22 |
 | M6 — OEE | ✅ Done | 2026-07-22 |
 | M7 — Traceability | ✅ Done | 2026-07-22 |
-| M8 — QMS | ⬜ Not started | — |
+| M8 — QMS | ✅ Done | 2026-07-22 |
 | M9 — CMMS | ⬜ Not started | — |
 | M10 — ERP integration page | ⬜ Not started | — |
 | M11 — Desktop app | ⬜ Not started | — |
@@ -480,3 +480,51 @@ blocks issue.
   serial-level-vs-lot-only default per part (§17 Q6) is a policy toggle for a
   launch customer, not a schema change. `holds` lands at M7 for the issue-block;
   M8 adds the NCR linkage additively.
+
+---
+
+## M8 — QMS ✅
+
+**Goal (§12):** plans/characteristics/results with auto pass/fail, auto-NCR +
+hold on fail, disposition lifecycle.
+
+**Acceptance:** fail → NCR + hold created; Rework disposition releases correctly;
+Quality-role gating enforced.
+
+### What landed
+
+- **QMS domain (`mes-core::qms`, pure)** — `evaluate()` (measurement vs optional
+  inclusive lower/upper limits → Pass/Fail), `NcrStatus`
+  (Open→Dispositioned→Closed), and `Disposition` (Rework/Scrap/UseAsIs/Return)
+  with `releases_hold()` — **Rework & Use-As-Is release**, Scrap & Return keep
+  the hold. 4 unit tests.
+- **Schema** — migration `0009` (additive): `inspection_plans`,
+  `characteristics` (nominal + lower/upper limits), `inspection_results`,
+  `ncrs`, and `holds.ncr_id` (the additive M7→M8 link).
+- **Auto-NCR flow (`mes-db::repo_qms`)** — `record_result` evaluates pass/fail
+  server-side and, **on fail, atomically** inserts the result, raises an NCR
+  (Open), and places an NCR-linked hold on the lot/serial.
+  `disposition_ncr` moves Open→Dispositioned and, when the disposition
+  releases (Rework/UseAsIs), releases the NCR's active holds in the same
+  transaction.
+- **`/v1/qms`** — plan/characteristic create + NCR disposition are quality-gated
+  (`roles::can_manage_quality`); recording a result is open to any authenticated
+  user; a raised NCR broadcasts an `NcrRaised` andon WS event.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green.
+- **Integration suite** (`tests/m8_qms.rs`, fresh schema per test):
+  - `fail_raises_ncr_and_hold_rework_releases` — pass (10.0) → no NCR; fail
+    (12.0) → NCR **open** + hold that **blocks issue (409)**; Operator
+    disposition → **403**; Quality **Rework** disposition → hold released →
+    issue **succeeds (201)**.
+  - `scrap_disposition_keeps_hold` — a **Scrap** disposition leaves the hold
+    active, so issue stays blocked (409).
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- NCR `Closed` (verification) transition exists in the domain and can be exposed
+  as a `/close` endpoint when the QMS console needs it (M11). Auto-hold is placed
+  on the failing lot/serial; a characteristic without limits always passes.
