@@ -98,6 +98,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/v1/qms", crate::qms::routes())
         .nest("/v1/cmms", crate::cmms::routes())
         .nest("/v1/erp", crate::erp::routes())
+        .nest("/v1/diagnostics", crate::diagnostics::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

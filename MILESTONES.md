@@ -852,3 +852,70 @@ the cloud is unreachable.
 - Only `get_wo_status` has cloud-aggregated data today (M12 synced work orders);
   the other tools light up as their aggregates join the sync set — additive, no
   API change.
+
+---
+
+## M14 — Release CI + Diagnostics ✅
+
+**Goal:** extend M0's `ci.yml` into a tag-triggered `release.yml` (signed,
+draft-then-publish) for the Tauri desktop artifacts + versioned edge/cloud images,
+and build `mes-diagnostics` (heartbeat/manual/error_trigger/redact/buffer/crash)
+shipping **opt-in per customer** to a private GitHub repo, mirroring DNC (§8.5,
+§12 M14).
+
+**Acceptance:** a throwaway tag smoke-tests the full release pipeline like DNC's
+v0.2.99 dry run; a manual Send-Diagnostics round-trips to a test repo with
+redaction verified against a fixture payload containing fake sensitive fields.
+
+### What landed
+
+- **`mes-diagnostics`** — mirrors DNC's module shape 1:1: `redact`, `buffer`,
+  `heartbeat`, `manual`, `error_trigger`, `crash`, plus `github` shipping.
+  - **`redact` (stricter than DNC, §8.5)** — an **allowlist**: only structural /
+    error keys survive; every other field (part numbers, customer names, pricing,
+    inspection values, PINs, lot/serial) is dropped, and containers under non-safe
+    keys are dropped wholesale. Allowed free-text is additionally scrubbed of
+    emails/opaque tokens. This is the mandatory redaction suite (§13): fixtures
+    stuffed with fake sensitive fields, asserting **none survive**.
+  - **`buffer`** — a bounded ring of recent events, redacted on the way in so it
+    never holds business data; **`crash`** captures a panic as a *hash + location*
+    only (never the raw message); **`heartbeat` / `manual` / `error_trigger`**
+    build structural report payloads.
+  - **`send_diagnostics`** — the single choke point: honours the opt-in switch
+    (`ShipConfig`, off by default) and **always redacts** before shipping via a
+    `Shipper` (real `GitHubShipper` → private-repo issue; a mock in tests).
+- **Edge endpoint** — `POST /v1/diagnostics/send` (master-writer gated): the
+  supervisor console's "Send Diagnostics" button; builds a manual report and ships
+  it opt-in, returning `shipped` or `skipped`.
+- **`release.yml`** — tag (`v*`) triggered, mirroring DNC's shape: a **gate**
+  (fmt+clippy+test with TimescaleDB) → versioned GHCR image (both binaries) →
+  **Tauri desktop** artifacts (ubuntu/macos/windows via `tauri-action`) → a
+  **draft** GitHub release with `SHA256SUMS` (the signed step). Draft-then-publish:
+  a maintainer publishes after review.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green (115 tests).
+- **Redaction suite** (`mes-diagnostics`, 12 unit tests): a fixture with
+  `part_number`/`customer_name`/`price`/`measured_value`/`scrap_reason`/`lot_no`/
+  `serial_no`/`operator_pin`/nested `wo_number`/`inspection_value` → **no value
+  survives**; safe structural fields kept; nested business keys under a safe
+  container still dropped; embedded email/token scrubbed; crash message never
+  emitted (hash only).
+- **Manual Send round-trip** (`send_diagnostics` with a mock shipper): disabled →
+  ships nothing (`Skipped`); enabled → ships a bundle whose body carries **no**
+  business data (`Shipped`).
+
+### Notes / deferrals
+
+- The `release.yml` tag smoke-test runs on a real tag in GitHub Actions; it can't
+  be exercised from this sandbox (tag pushes are blocked here), and packaging the
+  desktop app needs bundle icons (the workflow generates placeholders best-effort;
+  a real release swaps in the brand logo). The workflow structure mirrors DNC's
+  proven `release.yml`.
+- GitHub shipping is opt-in per customer (§17 Q4): off by default via
+  `MES_DIAG_ENABLED`; nothing leaves the box unless enabled, and everything that
+  does passes through `redact` first.
+- A scheduled heartbeat loop and auto `error_trigger`/`crash` wiring on the
+  running services are thin follow-ups over these building blocks (the panic hook
+  installer is provided).

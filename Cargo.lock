@@ -1255,9 +1255,12 @@ dependencies = [
 name = "mes-diagnostics"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
@@ -1288,6 +1291,7 @@ dependencies = [
  "mes-client",
  "mes-core",
  "mes-db",
+ "mes-diagnostics",
  "mes-dnc-bridge",
  "mes-erp",
  "mes-ingest",
