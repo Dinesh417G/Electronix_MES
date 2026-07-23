@@ -12,6 +12,7 @@ path = "src/main.rs"
 mes-core = { workspace = true }
 mes-db = { workspace = true }
 mes-client = { workspace = true }
+mes-sync = { workspace = true }
 
 sqlx = { workspace = true }
 tokio = { workspace = true }
@@ -20,5 +21,12 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+rust_decimal = { workspace = true }
 utoipa = { workspace = true }
+
+[dev-dependencies]
+mes-core = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

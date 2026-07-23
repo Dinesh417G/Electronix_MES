@@ -11,6 +11,9 @@ pub struct Config {
     pub database_url: Option<String>,
     /// Upper bound on pooled DB connections.
     pub db_max_connections: u32,
+    /// Optional bearer token gating org/plant provisioning. When unset,
+    /// provisioning is open (dev/self-hosted); set it in a real deployment.
+    pub admin_token: Option<String>,
 }
 
 impl Config {
@@ -23,10 +26,15 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(20);
 
+        let admin_token = env::var("MES_CLOUD_ADMIN_TOKEN")
+            .ok()
+            .filter(|s| !s.is_empty());
+
         Ok(Self {
             bind,
             database_url,
             db_max_connections,
+            admin_token,
         })
     }
 }

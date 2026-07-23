@@ -723,3 +723,63 @@ flow and the supervisor flow; the app type-checks and builds. Gated by
   (`npm run tauri icon`), not checked in.
 - Tauri packaging (`tauri build`) needs system webkit libs and runs via the Tauri
   CLI outside the backend CI; the React app is the CI-independent build check.
+
+---
+
+## M12 — Cloud + sync ✅
+
+**Goal:** `mes-cloud` multi-tenancy (orgs/plants/enrollment), the offline-first
+outbox push/pull protocol with idempotent apply, remote work-order creation, and
+the multi-plant dashboard list (§7, §8.3, §12 M12).
+
+**Acceptance:** kill network 24h in test, replay outbox, cloud converges; a
+duplicate batch is a no-op; a remote WO appears on the edge.
+
+### What landed
+
+- **Schema** — migration `0012` (additive): `outbox` (append-only change feed;
+  `destination` NULL = to-cloud, a plant id = a command to that edge; `id` is the
+  end-to-end idempotency key), `applied_entries` (the idempotent-apply ledger),
+  and `orgs`/`plants` (multi-tenancy; plant `enrollment_token_hash` — SHA-256,
+  §14).
+- **Outbox writer** — `repo_orders::create_work_order` now appends an outbox row
+  **in the same transaction** as the WO insert (§8.3), so an edge is offline-first
+  and converges later.
+- **Protocol (`mes-db::repo_sync`)** — `enqueue`, `fetch_to_cloud`, `mark_synced`;
+  `apply_entry` claims the id in `applied_entries` (`ON CONFLICT DO NOTHING`) and
+  upserts the aggregate (`work_order` → `ON CONFLICT (id) DO UPDATE`), returning
+  whether it was newly applied so a replay is a no-op; `apply_batch`; org/plant
+  CRUD + enrollment (`hash_token`/`verify_plant_token`); `pull_for_plant`;
+  `create_remote_work_order` (writes the WO on the cloud + enqueues a
+  plant-destined command in one tx).
+- **`/v1/sync` (cloud)** — `POST /orgs`, `POST /orgs/:id/plants` (enroll → returns
+  the plaintext token once), `GET /plants` (dashboard), `POST /plants/:id/
+  work-orders` (remote WO), `POST /push`, `GET /pull`, `POST /ack`. Provisioning
+  is gated by an optional cloud admin token; push/pull/ack authenticate the plant
+  by its enrollment token; batches are capped at `mes_sync::MAX_BATCH` (500).
+- **`mes-cloud` lib refactor** — split into `lib.rs` (`run()` + modules) + a thin
+  `main.rs` so the router is testable in-process.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green.
+- **Integration suite** (`tests/m12_sync.rs`, fresh schema per test, cloud router
+  in-process):
+  - `push_converges_and_replay_is_noop` — a wrong plant token is **401**; the
+    first push applies the WO (cloud converges); **replaying the same batch
+    applies 0 / skips 1** with no duplicate WO; the plant appears on the dashboard
+    with a `last_sync_at` stamp.
+  - `remote_work_order_is_pulled_to_the_edge` — a WO created remotely on the cloud
+    is **pulled by the plant** and, applied to a **separate edge schema**, the WO
+    appears on the edge; after **ack**, a second pull is empty.
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- The edge-side sync client loop (periodic push of its outbox + pull/apply/ack of
+  commands) is driven by these repo/HTTP primitives; wiring it as a background
+  task on `mes-edge` with a configurable cloud URL is a thin follow-up. The
+  protocol and its convergence/idempotency guarantees are proven here.
+- `work_order` is the first synced aggregate; more are additive (a payload shape +
+  an `apply_*` arm), no schema change. Master data is provisioned before WOs sync
+  (the WO upsert keeps the `parts` FK), mirroring a real rollout.
