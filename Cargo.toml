@@ -13,6 +13,10 @@ members = [
     "crates/mes-cloud",
     "crates/mes-client",
 ]
+# The Tauri desktop shell is its own isolated workspace (it needs system webkit
+# libs and is built via the Tauri CLI, not the backend dev-gate). Excluded so
+# `cargo build/clippy/test --workspace` never tries to compile it.
+exclude = ["apps/desktop/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

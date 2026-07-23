@@ -1,0 +1,23 @@
+# Tauri 2 desktop shell. Its own workspace (empty [workspace] table) so it never
+# joins the backend Cargo workspace — it needs system webkit libs and is built
+# with the Tauri CLI, not the dev-gate CI.
+[workspace]
+
+[package]
+name = "electronix-mes-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "Proprietary"
+description = "ElectronIx MES desktop app (operator kiosk + supervisor console)"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Enable when packaging so devtools are stripped from the release build.
+custom-protocol = ["tauri/custom-protocol"]

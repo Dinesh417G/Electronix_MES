@@ -666,3 +666,60 @@ a different fake shape needs a mapping change only, never a code change.
   the token on update keeps the existing one; an explicit "remove token" action
   can be added when the settings page needs it (M11).
 - The admin settings **page** itself is M11 (desktop); M10 delivers its backend.
+
+---
+
+## M11 — Desktop app ✅
+
+**Goal:** the Tauri 2 + React desktop app — operator kiosk (fast lane + scripted
+offline chat panel) and supervisor/planner console (dashboards + CMMS + ERP
+settings + program-revision review queue + copilot panel) (§11).
+
+**Acceptance (§12 M11 / §13):** a written manual test plan covering the operator
+flow and the supervisor flow; the app type-checks and builds. Gated by
+`apps/desktop/TESTPLAN.md` (component tests optional in v1).
+
+### What landed
+
+- **Scaffold** — Vite + React 18 + TypeScript + Tailwind + Recharts + TanStack
+  Query + react-router; a Tauri 2 shell (`src-tauri/`) kept as its **own** Cargo
+  workspace (and `exclude`d from the backend workspace) so it never enters the
+  dev-gate.
+- **API layer** — a typed `fetch` client (bearer token, 401 → sign-out), a full
+  set of TanStack Query hooks over the edge API, a reconnecting `/ws` hook, and
+  TS mirrors of the `mes-client` DTOs (one wire contract, both ends).
+- **Auth** — dual login: a big PIN pad (kiosk) and a password form (console),
+  both minting the same bearer token; role-based routing keeps Operators out of
+  the console.
+- **Operator kiosk** — work-center picker → active-order card → giant GOOD/SCRAP
+  buttons (scrap forces a reason), Start/Complete operation, a Classify-Downtime
+  path, the blue **DNC job-ready banner**, and the **scripted offline chat
+  panel** that renders `/ws` events (job-ready → fetch, transfer-complete,
+  program-edit → draft, NCR) as deterministic bubbles with tap actions — **zero
+  LLM calls**, LAN-only.
+- **Supervisor console** — live plant tiles + shift-OEE breakdown (live `/ws`
+  `oee_snapshot`, Recharts), downtime Pareto, QMS/NCR console with disposition,
+  CMMS view (PM-due, maintenance-WO board with forward-only transitions, spares
+  stock, procurement queue), program-revision review queue (promote/reject —
+  never auto-promoted), the no-code **ERP settings page** (endpoint + write-only
+  token + JSON field-mapping + sync-now + sync log), and the **copilot panel**
+  that calls cloud `/v1/copilot` and degrades to an "unavailable offline" banner.
+
+### Verification
+
+- `npm run build` (`tsc --noEmit` + `vite build`) passes — 897 modules, clean
+  type-check.
+- Backend dev-gate unaffected: `cargo fmt --all --check` clean and
+  `cargo build --workspace` green with `src-tauri` excluded.
+- **`apps/desktop/TESTPLAN.md`** documents the full operator (A1–A13) and
+  supervisor (B1–B12) manual acceptance scripts.
+
+### Notes / deferrals
+
+- The copilot panel is the client seam; its live tool-use loop lands with the
+  cloud at M13. Offline degradation is already implemented and testable.
+- Scrap/downtime reason chips use a small default set for the demo; a plant seeds
+  its own reason master data. Bundle icons are generated at packaging time
+  (`npm run tauri icon`), not checked in.
+- Tauri packaging (`tauri build`) needs system webkit libs and runs via the Tauri
+  CLI outside the backend CI; the React app is the CI-independent build check.
