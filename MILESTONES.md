@@ -598,3 +598,71 @@ breach creates a `procurement_request`.
 - `complete_pm` (resetting a schedule's baseline after a PM WO is verified) is
   deferred to when the CMMS console drives it (M11); the due engine and lifecycle
   it needs are already in place.
+
+---
+
+## M10 — ERP integration page ✅
+
+**Goal:** an admin-configurable ERP integration (`erp_connections` with encrypted
+token storage), generic `/v1/erp/import` + `/v1/erp/export` driven by a
+configurable field-mapping engine, `erp_sync_log`, and wiring M9's
+`procurement_requests` through to `SentToErp` (§7, §10, §12 M10).
+
+**Acceptance:** a fixture "generic ERP" (a spawned REST mock) round-trips a WO
+import and a stock-level export via configured mapping — re-pointing the mock at
+a different fake shape needs a mapping change only, never a code change.
+
+### What landed
+
+- **Field-mapping engine (`mes-erp::mapping`, pure)** — `FieldMapping` parses a
+  connection's `{ "fields": { "<canonical>": "<external>" } }` JSONB and maps
+  `to_canonical` (import) / `to_external` (export). The "no per-customer code"
+  guarantee (§3) is proven by a unit test: the same canonical data maps to two
+  different ERP vocabularies with only the mapping changed. 6 unit tests.
+- **Token encryption at rest (`mes-erp::crypto`, §14)** — XChaCha20-Poly1305 AEAD
+  with a key derived (SHA-256, domain-separated) from the server signing secret,
+  so there is one secret to configure and the key is stable across restarts.
+  Tokens are **write-only**: accepted on create/update, encrypted, and never
+  returned (`ErpConnection` exposes only `has_token`). 4 unit tests.
+- **Generic REST client (`mes-erp::push`)** — one shape-agnostic bearer-authed
+  POST to the connection's endpoint (proxy disabled for loopback/plant-local).
+- **Schema** — migration `0011` (additive): `erp_connections` (endpoint,
+  `auth_token_enc`, `field_mapping` JSONB, direction, enabled) and `erp_sync_log`
+  (the audit trail the admin page's "last sync" view reads). The `json` sqlx
+  feature was enabled to bind/decode JSONB.
+- **Repositories (`mes-db::repo_erp`)** — connection CRUD (update keeps the token
+  when omitted via `COALESCE`), sync-log insert/list, and `mark_procurement_sent`
+  (Requested→SentToErp with `pushed_at` + `erp_reference`).
+- **`/v1/erp`** — connection CRUD, generic `import` (external records → mapping →
+  canonical → create), generic `export`/"sync now" (gather → mapping → POST to
+  ERP → log; procurement export transitions to SentToErp), and the sync log. All
+  master-writer gated (Admin/Planner) since they carry credentials/config.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green (mes-erp: 10
+  tests).
+- **Integration suite** (`tests/m10_erp.rs`, fresh schema per test, spawns a mock
+  ERP REST server):
+  - `import_work_order_via_mapping_and_remap` — import a WO through mapping A
+    (OrderNo/Item/Qty); then **re-point the connection at a different shape**
+    (po/material/amount) and import again — mapping change only, no code change;
+    the token is never echoed (`has_token` only); both imports are logged.
+  - `export_stock_level_pushes_mapped_payload` — MES stock is mapped to the ERP's
+    field names (sku/on_hand) and the mock **receives the mapped payload over
+    HTTP**.
+  - `export_procurement_marks_sent_to_erp` — a reorder-point request is pushed,
+    transitions to **`sent_to_erp`** with the ERP's reference and `pushed_at`;
+    an Operator export attempt is **403**.
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- Import is push-based (external records posted to `/v1/erp/import`); export is
+  the outbound "sync now". Entities supported in v1: import `work_order`; export
+  `stock_level` and `procurement_request`. More entities are additive mapping +
+  gather code, no schema change.
+- Clearing a stored token (vs. leaving it unchanged) isn't exposed yet — omitting
+  the token on update keeps the existing one; an explicit "remove token" action
+  can be added when the settings page needs it (M11).
+- The admin settings **page** itself is M11 (desktop); M10 delivers its backend.

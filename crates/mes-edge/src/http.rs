@@ -37,17 +37,25 @@ pub struct AppState {
     /// disconnected stub so orchestration degrades gracefully when no CNC is
     /// present; tests inject a virtual daemon.
     pub dnc: Arc<dyn DncDaemon>,
+    /// Key for encrypting ERP auth tokens at rest (§14, §12 M10). Derived from
+    /// the signing secret so there is one secret to configure.
+    pub erp_key: [u8; 32],
+    /// Reusable outbound REST client for ERP "sync now" (§12 M10).
+    pub erp: mes_erp::ErpClient,
 }
 
 impl AppState {
     /// Build state with a fresh event bus and a disconnected DNC daemon.
     pub fn new(pool: Option<PgPool>, auth: AuthConfig) -> Self {
         let (events, _) = broadcast::channel(1024);
+        let erp_key = mes_erp::crypto::derive_key(auth.secret_bytes());
         Self {
             pool,
             auth,
             events,
             dnc: Arc::new(DisconnectedDaemon),
+            erp_key,
+            erp: mes_erp::ErpClient::new(),
         }
     }
 
@@ -89,6 +97,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/v1/trace", crate::trace::routes())
         .nest("/v1/qms", crate::qms::routes())
         .nest("/v1/cmms", crate::cmms::routes())
+        .nest("/v1/erp", crate::erp::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

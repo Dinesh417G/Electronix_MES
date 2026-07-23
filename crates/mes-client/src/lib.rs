@@ -10,6 +10,7 @@ pub mod analytics;
 pub mod auth;
 pub mod cmms;
 pub mod dnc;
+pub mod erp;
 pub mod exec;
 pub mod ingest;
 pub mod master;
