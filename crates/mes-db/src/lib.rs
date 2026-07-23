@@ -10,6 +10,7 @@
 
 pub mod repo;
 pub mod repo_analytics;
+pub mod repo_cmms;
 pub mod repo_dnc;
 pub mod repo_ingest;
 pub mod repo_oee;

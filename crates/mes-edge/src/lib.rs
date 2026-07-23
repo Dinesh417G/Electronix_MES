@@ -10,6 +10,7 @@ pub mod analytics;
 pub mod api;
 pub mod auth;
 pub mod auth_routes;
+pub mod cmms;
 pub mod config;
 pub mod dnc;
 pub mod exec;

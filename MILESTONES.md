@@ -528,3 +528,73 @@ Quality-role gating enforced.
 - NCR `Closed` (verification) transition exists in the domain and can be exposed
   as a `/close` endpoint when the QMS console needs it (M11). Auto-hold is placed
   on the failing lot/serial; a characteristic without limits always passes.
+
+---
+
+## M9 — CMMS ✅
+
+**Goal:** preventive-maintenance scheduling (calendar + usage-hours), maintenance
+work orders, a spare-parts ledger, and procurement *requests* — plus the
+`Maintenance` role added additively (§7, §12 M9).
+
+**Acceptance:** usage-hours PM triggers correctly off simulated run-hours;
+maintenance-WO lifecycle test; spare-consumption ledger test; a reorder-point
+breach creates a `procurement_request`.
+
+### What landed
+
+- **CMMS domain (`mes-core::cmms`, pure)** — `PmTrigger` (calendar | usage_hours)
+  with `calendar_next_due`/`calendar_is_due` and `usage_next_due`/`usage_is_due`;
+  `MaintenanceType` (PM/Corrective/Breakdown); `MaintenanceStatus`
+  (Requested→Scheduled→InProgress→Completed→Verified) with a forward-only
+  `can_transition`; `ProcurementStatus` (Requested→SentToErp→Fulfilled) and
+  `ProcurementReason`. The PM-due decision lives here so it is the exact
+  unit-tested logic (§13) — 6 unit tests.
+- **Role** — `roles::MAINTENANCE` + `can_manage_maintenance`
+  (Maintenance/Supervisor/Admin). The role is seeded by a plain `INSERT` in
+  migration `0010`, exactly the additive path §7 reserved (lookup table, not an
+  enum).
+- **Schema** — migration `0010` (additive): `pm_schedules` (calendar + usage
+  bookkeeping), `maintenance_work_orders` (closed WOs *are* the history),
+  `spare_parts`, `spare_txns` (signed ledger — stock is `SUM(qty)`, never a
+  mutable column), and `procurement_requests` (status caps at `requested` until
+  M10). A partial unique index keeps at most one open auto-reorder request per
+  spare.
+- **Repositories (`mes-db::repo_cmms`)** — `work_center_run_hours` sums the
+  existing `machine_states` RUNNING intervals (no new raw data, §7);
+  `create_pm_schedule` anchors calendar next-due to now+interval and usage
+  next-due to current run-hours + interval; `list_pm_due` supplies the clock /
+  run-hours and defers the due decision to `mes-core`;
+  `transition_maintenance_wo` validates the step and stamps the matching
+  timestamp under `FOR UPDATE`; `record_spare_txn` applies the sign from the txn
+  type, derives new stock, and (idempotently) raises a reorder-point request on
+  breach.
+- **`/v1/cmms`** — PM schedules, maintenance-WO board + transition, spares +
+  ledger txns, procurement queue. Mutations are maintenance-gated
+  (`can_manage_maintenance`); reads are open to any authenticated user.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green
+  (mes-core CMMS: 6 tests; roles: +1).
+- **Integration suite** (`tests/m9_cmms.rs`, fresh schema per test):
+  - `usage_pm_triggers_off_run_hours` — two usage schedules (due at 10h/20h);
+    after 12 simulated run-hours the 10h schedule appears in `/pm-schedules/due`
+    and the 20h one does not, with `current_usage_h ≈ 12`.
+  - `maintenance_wo_lifecycle_forward_only` — a WO advances
+    requested→…→verified (all 200); skipping requested→completed is **409**; an
+    Operator transition is **403**.
+  - `spare_ledger_and_reorder_point` — receive 10 → stock 10, no request; issue 6
+    → stock 4 (≤5) → one `reorder_point` request for 20; a second breach raises
+    **no duplicate**; Operator create-spare is **403**.
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- Procurement is **request-only** (§3 locked decision): MES raises
+  `procurement_requests` and stops at `requested`; the PO/vendor lifecycle and
+  the `SentToErp`→`Fulfilled` transitions are wired through the ERP integration
+  at M10. `ProcurementStatus::can_transition` already encodes those steps.
+- `complete_pm` (resetting a schedule's baseline after a PM WO is verified) is
+  deferred to when the CMMS console drives it (M11); the due engine and lifecycle
+  it needs are already in place.

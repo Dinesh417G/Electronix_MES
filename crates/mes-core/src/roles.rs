@@ -12,6 +12,8 @@ pub const PLANNER: &str = "Planner";
 pub const SUPERVISOR: &str = "Supervisor";
 pub const OPERATOR: &str = "Operator";
 pub const QUALITY: &str = "Quality";
+/// Added at M9 as a plain `roles` row (§7). Grants CMMS management rights below.
+pub const MAINTENANCE: &str = "Maintenance";
 
 /// May the given role create/update/delete master data (equipment, products,
 /// people)? Admin and Planner only — Operators explicitly cannot (§12 M1
@@ -35,6 +37,12 @@ pub fn can_promote_revision(role_code: &str) -> bool {
 /// dispositioning NCRs (§8, M7/M8)? Quality and Supervisor, plus Admin.
 pub fn can_manage_quality(role_code: &str) -> bool {
     matches!(role_code, ADMIN | SUPERVISOR | QUALITY)
+}
+
+/// May the given role manage CMMS work — PM schedules, maintenance WOs, spares,
+/// and procurement requests (§7, M9)? Maintenance and Supervisor, plus Admin.
+pub fn can_manage_maintenance(role_code: &str) -> bool {
+    matches!(role_code, ADMIN | SUPERVISOR | MAINTENANCE)
 }
 
 #[cfg(test)]
@@ -77,5 +85,14 @@ mod tests {
         assert!(can_manage_quality(ADMIN));
         assert!(!can_manage_quality(OPERATOR));
         assert!(!can_manage_quality(PLANNER));
+    }
+
+    #[test]
+    fn maintenance_actions_gated_to_maintenance_supervisor_admin() {
+        assert!(can_manage_maintenance(MAINTENANCE));
+        assert!(can_manage_maintenance(SUPERVISOR));
+        assert!(can_manage_maintenance(ADMIN));
+        assert!(!can_manage_maintenance(OPERATOR));
+        assert!(!can_manage_maintenance(QUALITY));
     }
 }

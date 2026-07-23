@@ -17,10 +17,16 @@ async fn roles_are_seeded() {
         return;
     };
     let pool = ctx.state.pool.as_ref().unwrap();
-    let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM roles")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    // The five base roles M1 seeds. Later milestones add more additively
+    // (Maintenance at M9, §7), so assert the base set is present by code rather
+    // than an exact total row count.
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM roles
+         WHERE code IN ('Admin', 'Planner', 'Supervisor', 'Operator', 'Quality')",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
     assert_eq!(n, 5, "Admin/Planner/Supervisor/Operator/Quality seeded");
     teardown(ctx).await;
 }

@@ -12,6 +12,7 @@
 
 pub mod analytics;
 pub mod barcode;
+pub mod cmms;
 pub mod dnc;
 pub mod error;
 pub mod id;
