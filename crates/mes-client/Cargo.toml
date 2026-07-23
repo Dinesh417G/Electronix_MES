@@ -8,6 +8,7 @@ license.workspace = true
 # apps. Stays lightweight and mobile-ready (§1) — no runtime, no I/O.
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 utoipa = { workspace = true }

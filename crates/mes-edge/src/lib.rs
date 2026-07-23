@@ -13,6 +13,7 @@ pub mod auth_routes;
 pub mod cmms;
 pub mod config;
 pub mod dnc;
+pub mod erp;
 pub mod exec;
 pub mod extract;
 pub mod http;

@@ -24,6 +24,12 @@ impl AuthConfig {
     pub fn new(secret: String, ttl_secs: i64) -> Self {
         Self { secret, ttl_secs }
     }
+
+    /// The signing secret's bytes. Used to derive the ERP token-encryption key
+    /// (domain-separated, §14) so there is a single configured secret.
+    pub fn secret_bytes(&self) -> &[u8] {
+        self.secret.as_bytes()
+    }
 }
 
 /// JWT claims. `sub` is the user id, `role` the role code, `exp`/`iat` epoch
