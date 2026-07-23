@@ -166,7 +166,7 @@ async fn push(
         ));
     }
     let pool = require_pool(&state)?;
-    let (applied, skipped) = repo_sync::apply_batch(pool, &req.entries)
+    let (applied, skipped) = repo_sync::apply_batch(pool, &req.entries, Some(&req.plant_id))
         .await
         .map_err(repo_err)?;
     repo_sync::touch_plant_sync(pool, &req.plant_id)

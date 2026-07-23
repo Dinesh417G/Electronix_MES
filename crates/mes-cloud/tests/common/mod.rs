@@ -24,6 +24,15 @@ impl Ctx {
     pub fn router(&self) -> axum::Router {
         router(self.state.clone())
     }
+    /// A router whose copilot uses the given (test) backend.
+    pub fn router_with_backend(
+        &self,
+        backend: std::sync::Arc<dyn mes_cloud::copilot::LlmBackend>,
+    ) -> axum::Router {
+        let mut state = self.state.clone();
+        state.backend = backend;
+        router(state)
+    }
     pub fn pool(&self) -> &PgPool {
         self.state.pool.as_ref().unwrap()
     }
@@ -72,6 +81,7 @@ pub async fn setup() -> Option<Ctx> {
     let state = AppState {
         pool: Some(pool),
         admin_token: None,
+        backend: std::sync::Arc::new(mes_cloud::copilot::NullBackend),
     };
     Some(Ctx {
         state,

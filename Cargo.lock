@@ -1178,8 +1178,10 @@ name = "mes-agent-tools"
 version = "0.1.0"
 dependencies = [
  "mes-db",
+ "rust_decimal",
  "serde",
  "serde_json",
+ "sqlx",
  "thiserror 1.0.69",
  "tracing",
 ]
@@ -1200,16 +1202,20 @@ name = "mes-cloud"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "http-body-util",
+ "mes-agent-tools",
  "mes-client",
  "mes-core",
  "mes-db",
  "mes-sync",
+ "reqwest",
  "rust_decimal",
  "serde",
  "serde_json",
  "sqlx",
+ "thiserror 1.0.69",
  "tokio",
  "tower",
  "tower-http",

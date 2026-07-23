@@ -155,7 +155,7 @@ async fn remote_work_order_is_pulled_to_the_edge() {
 
     // The edge applies the pulled entry locally → the remote WO appears on edge.
     let entry: mes_client::sync::SyncEntry = serde_json::from_value(entries[0].clone()).unwrap();
-    let newly = mes_db::repo_sync::apply_entry(edge.pool(), &entry)
+    let newly = mes_db::repo_sync::apply_entry(edge.pool(), &entry, None)
         .await
         .unwrap();
     assert!(newly, "entry newly applied on the edge");
