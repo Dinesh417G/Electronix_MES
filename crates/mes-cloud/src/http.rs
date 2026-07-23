@@ -21,6 +21,8 @@ const SERVICE: &str = "mes-cloud";
 pub struct AppState {
     /// `None` until a database is configured (M0 allows liveness-only boot).
     pub pool: Option<PgPool>,
+    /// Optional bearer gating org/plant provisioning (§12 M12). `None` = open.
+    pub admin_token: Option<String>,
 }
 
 /// OpenAPI document root for the cloud service (§10).
@@ -38,6 +40,7 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api-doc/openapi.json", get(openapi_json))
+        .nest("/v1/sync", crate::sync::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -105,7 +108,10 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_is_false_without_pool() {
-        let state = AppState { pool: None };
+        let state = AppState {
+            pool: None,
+            admin_token: None,
+        };
         assert!(!is_ready(&state).await);
     }
 }

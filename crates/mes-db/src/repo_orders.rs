@@ -150,6 +150,21 @@ pub async fn create_work_order(
         operations.push(WoOperation::from(row));
     }
 
+    // Outbox in the same transaction as the write it describes (§8.3): this WO
+    // is queued for the cloud so an edge stays offline-first and converges later.
+    let payload = serde_json::json!({
+        "id": wo_id,
+        "wo_number": input.wo_number,
+        "part_id": input.part_id,
+        "routing_id": input.routing_id,
+        "qty_ordered": input.qty_ordered,
+        "priority": input.priority.unwrap_or(100),
+        "status": "draft",
+        "planned_start": input.planned_start,
+        "planned_end": input.planned_end,
+    });
+    crate::repo_sync::enqueue(&mut *tx, "work_order", &wo_id, "upsert", &payload, None).await?;
+
     tx.commit().await.map_err(map_sqlx)?;
     Ok(WorkOrderDetail {
         work_order: wo.into(),

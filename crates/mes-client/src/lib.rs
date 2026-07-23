@@ -16,6 +16,7 @@ pub mod ingest;
 pub mod master;
 pub mod orders;
 pub mod qms;
+pub mod sync;
 pub mod trace;
 pub mod ws;
 
