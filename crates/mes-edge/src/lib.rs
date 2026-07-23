@@ -12,6 +12,7 @@ pub mod auth;
 pub mod auth_routes;
 pub mod cmms;
 pub mod config;
+pub mod diagnostics;
 pub mod dnc;
 pub mod erp;
 pub mod exec;

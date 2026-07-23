@@ -1,0 +1,153 @@
+# Release CI — mirrors ElectronIx DNC's release.yml shape (§3, §12 M14):
+# tag-triggered → gate → build → signed (checksums) → draft release.
+# Adapted for a multi-target build: versioned edge/cloud container images plus
+# Tauri desktop artifacts. The release is created as a DRAFT; a maintainer
+# publishes it after review (DNC's proven draft-then-publish flow).
+#
+# Smoke-test like DNC's v0.2.99 dry run: push a throwaway tag (e.g. v0.0.0-rc1)
+# and watch the whole pipeline run and produce a draft release.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the draft release
+  packages: write # push images to GHCR
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # 1) Never release something that would not pass the dev-gate.
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://mes:mes@localhost:5432/mes
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: mes
+          POSTGRES_PASSWORD: mes
+          POSTGRES_DB: mes
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mes -d mes"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all --all-features
+
+  # 2) Versioned container image → GHCR. The one image ships both binaries
+  #    (the compose/K8s command selects mes-edge or mes-cloud at runtime), so it
+  #    is tagged under both service names for convenience.
+  images:
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/mes-edge:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}/mes-edge:latest
+            ghcr.io/${{ github.repository }}/mes-cloud:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}/mes-cloud:latest
+
+  # 3) Tauri desktop artifacts per OS.
+  desktop:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Install Linux webkit deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf imagemagick
+      - name: Install frontend deps
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Generate placeholder bundle icons
+        working-directory: apps/desktop
+        # A real release swaps in the brand logo; the smoke-test needs valid icons.
+        run: |
+          npx --yes @tauri-apps/cli@^2 icon src-tauri/icons/icon-source.png || true
+        continue-on-error: true
+      - name: Build desktop app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "ElectronIx MES ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+
+  # 4) Checksums (the "signed" step) + the draft GitHub release for the images
+  #    manifest. Desktop artifacts are attached to the same draft by tauri-action.
+  release:
+    needs: [images, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write image manifest
+        run: |
+          mkdir -p dist
+          {
+            echo "ElectronIx MES ${{ github.ref_name }}"
+            echo ""
+            echo "Container images:"
+            echo "  ghcr.io/${{ github.repository }}/mes-edge:${{ github.ref_name }}"
+            echo "  ghcr.io/${{ github.repository }}/mes-cloud:${{ github.ref_name }}"
+          } > dist/IMAGES.txt
+          sha256sum dist/IMAGES.txt > dist/SHA256SUMS
+      - name: Create/att draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: "ElectronIx MES ${{ github.ref_name }}"
+          files: |
+            dist/IMAGES.txt
+            dist/SHA256SUMS

@@ -14,6 +14,7 @@ mes-db = { workspace = true }
 mes-client = { workspace = true }
 mes-dnc-bridge = { workspace = true }
 mes-erp = { workspace = true }
+mes-diagnostics = { workspace = true }
 
 sqlx = { workspace = true }
 tokio = { workspace = true }
