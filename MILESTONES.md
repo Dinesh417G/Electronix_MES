@@ -783,3 +783,72 @@ duplicate batch is a no-op; a remote WO appears on the edge.
 - `work_order` is the first synced aggregate; more are additive (a payload shape +
   an `apply_*` arm), no schema change. Master data is provisioned before WOs sync
   (the WO upsert keeps the `parts` FK), mirroring a real rollout.
+
+---
+
+## M13 — MCP + Copilot ✅
+
+**Goal:** `mes-agent-tools` (read-only, tenant-scoped query set), an MCP server on
+`mes-cloud`, and `/v1/copilot` (Anthropic tool-use loop), with the desktop copilot
+panel wired in (§8.6, §12 M13).
+
+**Acceptance:** the MCP server answers a tenant-scoped query and *refuses* a
+cross-tenant query; the copilot round-trips a question using real tool calls
+against seeded data; the desktop panel shows the offline-degradation banner when
+the cloud is unreachable.
+
+### What landed
+
+- **Tenant tagging** — migration `0013` (additive): `work_orders.plant_id` (the
+  cloud sync apply tags aggregated WOs with the pushing plant) + `copilot_messages`
+  (audit only; the copilot is stateless, §7).
+- **`mes-agent-tools`** — a single `dispatch(pool, TenantScope, name, args)` entry
+  point and a `catalog()` of six read-only tools (`get_wo_status`, `get_oee`,
+  `get_downtime_pareto`, `get_ncr_queue`, `get_trace`, `get_maintenance_due`).
+  **Every query is bound to the org via `plants.plant_id`** — tenant scoping lives
+  in exactly one place (§14), so neither front door can widen it. `get_wo_status`
+  returns live tenant-scoped data; the rest are present + scoped and return an
+  empty result with a note until their aggregate joins the sync set (additive).
+- **Copilot (`mes-cloud::copilot`)** — a stateless tool-use loop over a pluggable
+  `LlmBackend`: `AnthropicBackend` (Messages API, tool-use; key server-side from
+  `ANTHROPIC_API_KEY`, never shipped to the desktop, §8.6) and `NullBackend`
+  (graceful degradation). Any tool the model calls executes through
+  `mes_agent_tools::dispatch`, tenant-scoped.
+- **Front doors (`mes-cloud::agent`)** — `POST /v1/copilot` (runs the loop, audits
+  to `copilot_messages`) and `POST /mcp` (a spec-compliant **JSON-RPC MCP** server:
+  `initialize`, `tools/list`, `tools/call`). Both authenticate the tenant by a
+  plant enrollment token → org scope.
+
+### Verification
+
+- `cargo fmt` / `clippy -D warnings` clean; `cargo test --all` green.
+- **Integration suite** (`tests/m13_agent.rs`, fresh schema per test):
+  - `mcp_is_tenant_scoped_and_lists_tools` — `initialize` + `tools/list`;
+    `tools/call get_wo_status` as **org A sees only A's WO, never B's** and vice
+    versa (the mandatory tenant-isolation test, §13); no token → **401**.
+  - `copilot_round_trips_a_tool_call_tenant_scoped` — a scripted backend calls the
+    real `get_wo_status`; the loop feeds the **tenant-scoped** result back and the
+    answer reflects exactly org C's one WO (not org D's) — real tool calls against
+    seeded data, no live model.
+  - `copilot_degrades_without_a_backend` — with `NullBackend`, `/v1/copilot` is
+    **503**, matching the desktop panel's offline banner (§11).
+  Runs in CI against the TimescaleDB service.
+
+### Notes / deferrals
+
+- **rmcp deviation (flagging §3/§5):** the MCP server implements the MCP wire
+  protocol directly as JSON-RPC-over-HTTP (a spec-compliant Streamable-HTTP-style
+  server) rather than via the `rmcp` crate. Functionally it is a working,
+  tenant-scoped MCP connector; swapping the transport to `rmcp` later leaves the
+  `mes-agent-tools` layer (where tenant scoping lives) unchanged. Happy to redo
+  the transport with `rmcp` if you'd prefer the crate specifically.
+- The Anthropic backend can't be exercised in CI (no key / no outbound to the API);
+  the tool-use loop + tenant scoping are proven with a scripted backend. The real
+  backend is behind `ANTHROPIC_API_KEY`.
+- OAuth for the MCP connector is represented by the per-plant enrollment token
+  (tenant = that plant's org); a full OAuth client-per-org flow is a follow-up.
+  The desktop copilot panel already degrades gracefully (M11); wiring it to send a
+  tenant token to the cloud is a small config follow-up.
+- Only `get_wo_status` has cloud-aggregated data today (M12 synced work orders);
+  the other tools light up as their aggregates join the sync set — additive, no
+  API change.

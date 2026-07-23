@@ -23,6 +23,8 @@ pub struct AppState {
     pub pool: Option<PgPool>,
     /// Optional bearer gating org/plant provisioning (§12 M12). `None` = open.
     pub admin_token: Option<String>,
+    /// Copilot model backend (§12 M13). `NullBackend` when no key is configured.
+    pub backend: std::sync::Arc<dyn crate::copilot::LlmBackend>,
 }
 
 /// OpenAPI document root for the cloud service (§10).
@@ -41,6 +43,7 @@ pub fn router(state: AppState) -> Router {
         .route("/readyz", get(readyz))
         .route("/api-doc/openapi.json", get(openapi_json))
         .nest("/v1/sync", crate::sync::routes())
+        .merge(crate::agent::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -111,6 +114,7 @@ mod tests {
         let state = AppState {
             pool: None,
             admin_token: None,
+            backend: std::sync::Arc::new(crate::copilot::NullBackend),
         };
         assert!(!is_ready(&state).await);
     }

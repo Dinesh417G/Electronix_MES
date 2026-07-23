@@ -152,14 +152,18 @@ fn draft() -> String {
     "draft".to_string()
 }
 
-async fn apply_work_order(tx: &mut Transaction<'_, Postgres>, payload: &Value) -> RepoResult<()> {
+async fn apply_work_order(
+    tx: &mut Transaction<'_, Postgres>,
+    payload: &Value,
+    plant_id: Option<&str>,
+) -> RepoResult<()> {
     let wo: WoPayload = serde_json::from_value(payload.clone())
         .map_err(|e| RepoError::InvalidReference(format!("bad work_order payload: {e}")))?;
     sqlx::query(
         "INSERT INTO work_orders
              (id, wo_number, part_id, routing_id, qty_ordered, priority, status,
-              planned_start, planned_end)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              planned_start, planned_end, plant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (id) DO UPDATE SET
              wo_number = EXCLUDED.wo_number,
              qty_ordered = EXCLUDED.qty_ordered,
@@ -167,6 +171,7 @@ async fn apply_work_order(tx: &mut Transaction<'_, Postgres>, payload: &Value) -
              status = EXCLUDED.status,
              planned_start = EXCLUDED.planned_start,
              planned_end = EXCLUDED.planned_end,
+             plant_id = COALESCE(EXCLUDED.plant_id, work_orders.plant_id),
              updated_at = now()",
     )
     .bind(&wo.id)
@@ -178,16 +183,22 @@ async fn apply_work_order(tx: &mut Transaction<'_, Postgres>, payload: &Value) -
     .bind(&wo.status)
     .bind(wo.planned_start)
     .bind(wo.planned_end)
+    .bind(plant_id)
     .execute(&mut **tx)
     .await
     .map_err(map_sqlx)?;
     Ok(())
 }
 
-/// Apply a single entry idempotently. Returns `true` if newly applied, `false`
-/// if its id was already applied (a no-op replay). An unknown aggregate is
-/// recorded as applied and otherwise ignored (forward-compatible).
-pub async fn apply_entry(pool: &PgPool, entry: &SyncEntry) -> RepoResult<bool> {
+/// Apply a single entry idempotently, tagging cloud-aggregated rows with the
+/// pushing plant (`plant_id`) for tenant scoping (§8.6). Returns `true` if newly
+/// applied, `false` if its id was already applied (a no-op replay). An unknown
+/// aggregate is recorded as applied and otherwise ignored (forward-compatible).
+pub async fn apply_entry(
+    pool: &PgPool,
+    entry: &SyncEntry,
+    plant_id: Option<&str>,
+) -> RepoResult<bool> {
     let mut tx = pool.begin().await.map_err(map_sqlx)?;
 
     let claimed =
@@ -202,7 +213,7 @@ pub async fn apply_entry(pool: &PgPool, entry: &SyncEntry) -> RepoResult<bool> {
     }
 
     match entry.aggregate.as_str() {
-        "work_order" => apply_work_order(&mut tx, &entry.payload).await?,
+        "work_order" => apply_work_order(&mut tx, &entry.payload, plant_id).await?,
         _ => {
             tracing::warn!(aggregate = %entry.aggregate, "unknown sync aggregate; recorded, ignored");
         }
@@ -212,12 +223,16 @@ pub async fn apply_entry(pool: &PgPool, entry: &SyncEntry) -> RepoResult<bool> {
     Ok(true)
 }
 
-/// Apply a whole batch, returning (applied, skipped).
-pub async fn apply_batch(pool: &PgPool, entries: &[SyncEntry]) -> RepoResult<(usize, usize)> {
+/// Apply a whole batch from `plant_id`, returning (applied, skipped).
+pub async fn apply_batch(
+    pool: &PgPool,
+    entries: &[SyncEntry],
+    plant_id: Option<&str>,
+) -> RepoResult<(usize, usize)> {
     let mut applied = 0;
     let mut skipped = 0;
     for e in entries {
-        if apply_entry(pool, e).await? {
+        if apply_entry(pool, e, plant_id).await? {
             applied += 1;
         } else {
             skipped += 1;
@@ -270,6 +285,21 @@ pub async fn enroll_plant(
     .await
     .map_err(map_sqlx)?;
     Ok((id, token))
+}
+
+/// Resolve a plant + its org from an enrollment token (the tenant scope for the
+/// copilot / MCP server, §8.6). Returns (plant_id, org_id).
+pub async fn resolve_tenant_by_token(
+    pool: &PgPool,
+    token: &str,
+) -> RepoResult<Option<(String, String)>> {
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT id, org_id FROM plants WHERE enrollment_token_hash = $1")
+            .bind(hash_token(token))
+            .fetch_optional(pool)
+            .await
+            .map_err(map_sqlx)?;
+    Ok(row)
 }
 
 /// Verify a plant's bearer token against the stored hash.
@@ -364,14 +394,15 @@ pub async fn create_remote_work_order(
 
     let wo_id = nid();
     sqlx::query(
-        "INSERT INTO work_orders (id, wo_number, part_id, qty_ordered, priority)
-         VALUES ($1, $2, $3, $4, COALESCE($5, 100))",
+        "INSERT INTO work_orders (id, wo_number, part_id, qty_ordered, priority, plant_id)
+         VALUES ($1, $2, $3, $4, COALESCE($5, 100), $6)",
     )
     .bind(&wo_id)
     .bind(wo_number)
     .bind(part_id)
     .bind(qty_ordered)
     .bind(priority)
+    .bind(plant_id)
     .execute(&mut *tx)
     .await
     .map_err(map_sqlx)?;
